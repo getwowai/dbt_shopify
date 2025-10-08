@@ -4,6 +4,8 @@ dbt_modules/
 logs/
 env/
 dbt_packages/
+dbt_packages_legacy/
 .DS_Store
 package-lock.yml
 venv/
+.crossnote/
