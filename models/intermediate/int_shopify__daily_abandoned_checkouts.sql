@@ -1,27 +1,20 @@
-{{ config(enabled=var('shopify_using_abandoned_checkout', True)) }}
+with abandoned_checkouts as (
 
-with abandoned_checkout as (
+    select * from {{ source('shopify_raw', 'abandoned_checkouts') }}
 
-    select *
-    from {{ var('shopify_abandoned_checkout') }}
-
-    -- "deleted" abandoned checkouts do not appear to have any data tying them to customers,
-    -- discounts, or products (and should therefore not get joined in) but let's filter them out here
-    where not coalesce(is_deleted, false)
-),
-
-abandoned_checkout_aggregates as (
+), aggregated as (
 
     select
-        source_relation,
-        cast({{ dbt.date_trunc('day','created_at') }} as date) as date_day,
-        count(distinct checkout_id) as count_abandoned_checkouts,
-        count(distinct customer_id) as count_customers_abandoned_checkout,
+        cast(created_at as date) as date_day,
+        'airbyte' as source_relation,
+
+        count(distinct id) as count_abandoned_checkouts,
+        count(distinct cast(json_extract_scalar(customer, '$.id') as int64)) as count_customers_abandoned_checkout,
         count(distinct email) as count_customer_emails_abandoned_checkout
 
-    from abandoned_checkout
-    group by 1,2
+    from abandoned_checkouts
+    group by 1, 2
+
 )
 
-select * 
-from abandoned_checkout_aggregates
+select * from aggregated

@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(do mv \"$file\" \"$file#airshopify__\")",
+      "Bash(source:*)",
+      "Bash(dbt compile:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

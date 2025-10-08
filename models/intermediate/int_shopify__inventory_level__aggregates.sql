@@ -1,94 +1,50 @@
 with order_lines as (
 
-    select *
-    from {{ var('shopify_order_line') }}
-),
+    select * from {{ ref('order_lines') }}
 
-fulfillment as (
+), orders as (
 
-    select *
-    from {{ var('shopify_fulfillment') }}
-),
+    select * from {{ ref('orders') }}
 
-orders as (
-
-    select *
-    from {{ var('shopify_order') }}
-    where not coalesce(is_deleted, false)
-), 
-
-refunds as (
-
-    select *
-    from {{ ref('shopify__orders__order_refunds') }}
-
-), refunds_aggregated as (
-    
-    select
-        order_line_id,
-        source_relation,
-        sum(quantity) as quantity,
-        sum(coalesce(subtotal, 0)) as subtotal
-
-    from refunds
-    group by 1,2
-),
-
-joined as (
+), aggregated as (
 
     select
-        order_lines.order_line_id,
         order_lines.variant_id,
+        order_lines.product_id,
         order_lines.source_relation,
-        fulfillment.location_id, -- location id is stored in fulfillment rather than order
-        orders.order_id,
-        orders.customer_id,
-        fulfillment.fulfillment_id,
-        lower(orders.email) as email,
-        order_lines.pre_tax_price,
-        order_lines.quantity,
-        orders.created_timestamp as order_created_timestamp,
-        fulfillment.status as fulfillment_status, 
-        refunds_aggregated.subtotal as subtotal_sold_refunds, 
-        refunds_aggregated.quantity as quantity_sold_refunds
+
+        -- sales metrics
+        sum(order_lines.price * order_lines.quantity) as subtotal_sold,
+        sum(order_lines.quantity) as quantity_sold,
+        count(distinct orders.order_id) as count_distinct_orders,
+        count(distinct orders.customer_id) as count_distinct_customers,
+        count(distinct orders.email) as count_distinct_customer_emails,
+        min(orders.created_timestamp) as first_order_timestamp,
+        max(orders.created_timestamp) as last_order_timestamp,
+
+        -- refunds
+        sum(order_lines.refunded_subtotal) as subtotal_sold_refunds,
+        sum(order_lines.refunded_quantity) as quantity_sold_refunds,
+
+        -- fulfillment status counts
+        sum(case when order_lines.fulfillment_status = 'pending' then 1 else 0 end) as count_fulfillment_pending,
+        sum(case when order_lines.fulfillment_status = 'open' then 1 else 0 end) as count_fulfillment_open,
+        sum(case when order_lines.fulfillment_status = 'success' then 1 else 0 end) as count_fulfillment_success,
+        sum(case when order_lines.fulfillment_status = 'cancelled' then 1 else 0 end) as count_fulfillment_cancelled,
+        sum(case when order_lines.fulfillment_status = 'error' then 1 else 0 end) as count_fulfillment_error,
+        sum(case when order_lines.fulfillment_status = 'failure' then 1 else 0 end) as count_fulfillment_failure,
+
+        -- net metrics
+        sum(order_lines.subtotal_net_refunds) as net_subtotal_sold,
+        sum(order_lines.quantity_net_refunds) as net_quantity_sold
 
     from order_lines
-    join orders
+    left join orders
         on order_lines.order_id = orders.order_id
         and order_lines.source_relation = orders.source_relation
-    join fulfillment
-        on orders.order_id = fulfillment.order_id
-        and orders.source_relation = fulfillment.source_relation
-    left join refunds_aggregated
-        on refunds_aggregated.order_line_id = order_lines.order_line_id
-        and refunds_aggregated.source_relation = order_lines.source_relation
-),
+    where order_lines.variant_id is not null
+    group by 1, 2, 3
 
-aggregated as (
-
-    select
-        variant_id,
-        location_id,
-        source_relation,
-        sum(pre_tax_price) as subtotal_sold,
-        sum(quantity) as quantity_sold,
-        count(distinct order_id) as count_distinct_orders,
-        count(distinct customer_id) as count_distinct_customers,
-        count(distinct email) as count_distinct_customer_emails,
-        min(order_created_timestamp) as first_order_timestamp,
-        max(order_created_timestamp) as last_order_timestamp
-
-        {% for status in ['pending', 'open', 'success', 'cancelled', 'error', 'failure'] %}
-        , count(distinct case when fulfillment_status = '{{ status }}' then fulfillment_id end) as count_fulfillment_{{ status }}
-        {% endfor %}
-
-        , sum(coalesce(subtotal_sold_refunds, 0)) as subtotal_sold_refunds
-        , sum(coalesce(quantity_sold_refunds, 0)) as quantity_sold_refunds
-
-    from joined
-
-    {{ dbt_utils.group_by(n=3) }}
 )
 
-select *
-from aggregated
+select * from aggregated
