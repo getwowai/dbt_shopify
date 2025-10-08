@@ -21,7 +21,7 @@ run_dbt_target() {
 }
 
 # Run dbt for each target
-run_dbt_target "vitrine_prod"
-run_dbt_target "breathe_prod"
+run_dbt_target "shopify_worood_prod"
+run_dbt_target "salla_demo_prod"
 
 echo "Completed running dbt for all targets at $(date)" 
